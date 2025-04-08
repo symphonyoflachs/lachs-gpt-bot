@@ -5,8 +5,27 @@ import discord
 import os
 import aiohttp
 import asyncio
+import sys
 from flask import Flask
 from threading import Thread
+
+# 🔐 Instanz-Checker
+LOCKFILE = ".lachslock"
+
+if os.path.exists(LOCKFILE):
+    print("❌ LachsGPT ist bereits aktiv – Beende mich!")
+    sys.exit(0)
+else:
+    with open(LOCKFILE, "w") as f:
+        f.write("running")
+
+import atexit
+
+def remove_lock():
+    if os.path.exists(LOCKFILE):
+        os.remove(LOCKFILE)
+
+atexit.register(remove_lock)
 
 # ⛓️ .env Variablen
 TOKEN = os.getenv("DISCORD_BOT_TOKEN")
@@ -20,7 +39,7 @@ DISCORD_CHANNEL_ID = int(os.getenv("DISCORD_CHANNEL_ID"))
 intents = discord.Intents.all()
 client = discord.Client(intents=intents)
 
-# 🧠 Anti-Doppel Verarbeitung
+# 🧠 Anti-Doppel-Schutz
 processing_messages = set()
 
 # 🌐 Flask für Render
@@ -81,12 +100,12 @@ async def check_stream():
 
             await asyncio.sleep(60)
 
-# ✅ Bot ist bereit
+# ✅ Bot bereit
 @client.event
 async def on_ready():
     print(f"LachsGPT ist online! Eingeloggt als {client.user}")
 
-# 💬 GPT-Antwort mit Sprachlogik & Anti-Doppel
+# 💬 HuggingFace Antwort
 @client.event
 async def on_message(message):
     if message.author == client.user or message.author.bot:
@@ -107,11 +126,7 @@ async def on_message(message):
 
             await message.channel.send("LachsGPT denkt nach... 🧠")
 
-            # Neuer, sprachsensibler Prompt
-            full_prompt = (
-                "Antworte bitte in der Sprache, in der diese Frage gestellt wurde.\n\n"
-                f"Frage: {prompt}"
-            )
+            full_prompt = prompt  # Keine Sprachlogik drumherum
 
             payload = {
                 "inputs": full_prompt,
@@ -141,7 +156,7 @@ async def on_message(message):
         await asyncio.sleep(1)
         processing_messages.discard(message.id)
 
-# 🧠 Start Hintergrund-Tasks
+# 🧠 Hintergrund-Tasks starten
 @client.event
 async def setup_hook():
     client.loop.create_task(check_stream())
