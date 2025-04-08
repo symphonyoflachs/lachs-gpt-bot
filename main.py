@@ -86,7 +86,7 @@ async def check_stream():
 async def on_ready():
     print(f"LachsGPT ist online! Eingeloggt als {client.user}")
 
-# 💬 GPT-Antwort mit Sprachautomatik & Schutz
+# 💬 GPT-Antwort mit Sprachlogik & Anti-Doppel
 @client.event
 async def on_message(message):
     if message.author == client.user or message.author.bot:
@@ -107,10 +107,10 @@ async def on_message(message):
 
             await message.channel.send("LachsGPT denkt nach... 🧠")
 
-            # Klarer Prompt für HuggingFace
+            # Neuer, sprachsensibler Prompt
             full_prompt = (
-                "Bitte beantworte die folgende Frage in der Sprache, in der sie gestellt wurde:\n"
-                f"{prompt}"
+                "Antworte bitte in der Sprache, in der diese Frage gestellt wurde.\n\n"
+                f"Frage: {prompt}"
             )
 
             payload = {
@@ -132,7 +132,7 @@ async def on_message(message):
                     if resp.status == 200:
                         data = await resp.json()
                         full = data[0].get("generated_text", "")
-                        reply = full.replace(prompt, "").strip() if full else "LachsGPT war sprachlos... 🐟"
+                        reply = full.strip() if full else "LachsGPT war sprachlos... 🐟"
                         await message.channel.send(reply)
                     else:
                         await message.channel.send(f"LachsGPT hat sich verschluckt... ({resp.status})")
@@ -146,8 +146,6 @@ async def on_message(message):
 async def setup_hook():
     client.loop.create_task(check_stream())
 
-# 🚀 Los geht’s
+# 🚀 Start
 keep_alive()
 client.run(TOKEN)
-
-
