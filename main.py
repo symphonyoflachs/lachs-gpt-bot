@@ -16,14 +16,14 @@ TWITCH_CLIENT_SECRET = os.getenv("TWITCH_CLIENT_SECRET")
 TWITCH_USERNAME = os.getenv("TWITCH_USERNAME")
 DISCORD_CHANNEL_ID = int(os.getenv("DISCORD_CHANNEL_ID"))
 
-# 🌊 Discord Bot & Intents
+# 🌊 Discord Bot
 intents = discord.Intents.all()
 client = discord.Client(intents=intents)
 
-# 🧠 Merkt sich verarbeitete Nachrichten (Anti-Doppel)
-recent_messages = set()
+# 🧠 Anti-Doppel Verarbeitung
+processing_messages = set()
 
-# 🌐 Flask Webserver für Render „Keep Alive“
+# 🌐 Flask für Render
 app = Flask('')
 
 @app.route('/')
@@ -86,72 +86,68 @@ async def check_stream():
 async def on_ready():
     print(f"LachsGPT ist online! Eingeloggt als {client.user}")
 
-# 💬 GPT via Hugging Face mit Sprachlogik + Anti-Doppel
+# 💬 GPT-Antwort mit Sprachautomatik & Schutz
 @client.event
 async def on_message(message):
     if message.author == client.user or message.author.bot:
         return
 
-    # 🛡️ Doppelcheck
-    if message.id in recent_messages:
+    if message.id in processing_messages:
         return
-    recent_messages.add(message.id)
+    processing_messages.add(message.id)
 
-    # Nach 60 Sek. vergessen
-    async def forget_message(mid):
-        await asyncio.sleep(60)
-        recent_messages.discard(mid)
+    try:
+        content = message.content.strip()
+        if content.lower().startswith("!lachs"):
+            prompt = content[6:].strip()
 
-    client.loop.create_task(forget_message(message.id))
+            if len(prompt) < 3:
+                await message.channel.send("Gib mir was zum Brutzeln, Lachs!")
+                return
 
-    # Lachs-Prompt checken
-    content = message.content.strip()
-    if content.lower().startswith("!lachs"):
-        prompt = content[6:].strip()
+            await message.channel.send("LachsGPT denkt nach... 🧠")
 
-        if len(prompt) < 3:
-            await message.channel.send("Gib mir was zum Brutzeln, Lachs!")
-            return
+            # Klarer Prompt für HuggingFace
+            full_prompt = (
+                "Bitte beantworte die folgende Frage in der Sprache, in der sie gestellt wurde:\n"
+                f"{prompt}"
+            )
 
-        await message.channel.send("LachsGPT denkt nach... 🧠")
+            payload = {
+                "inputs": full_prompt,
+                "parameters": {"max_new_tokens": 200},
+            }
 
-        system_instruction = (
-            "Antworte immer in der Sprache, in der der Benutzer spricht. "
-            "Wenn die Frage auf Deutsch ist, antworte auf Deutsch. "
-            "Wenn sie auf Englisch ist, dann auf Englisch. "
-            "Verwende keine andere Sprache."
-        )
+            headers = {
+                "Authorization": f"Bearer {HF_TOKEN}",
+                "Content-Type": "application/json"
+            }
 
-        payload = {
-            "inputs": f"[INST] <<SYS>>\n{system_instruction}\n<</SYS>>\n{prompt} [/INST]",
-            "parameters": {"max_new_tokens": 200},
-        }
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    "https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.1",
+                    headers=headers,
+                    json=payload
+                ) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        full = data[0].get("generated_text", "")
+                        reply = full.replace(prompt, "").strip() if full else "LachsGPT war sprachlos... 🐟"
+                        await message.channel.send(reply)
+                    else:
+                        await message.channel.send(f"LachsGPT hat sich verschluckt... ({resp.status})")
 
-        headers = {
-            "Authorization": f"Bearer {HF_TOKEN}",
-            "Content-Type": "application/json"
-        }
+    finally:
+        await asyncio.sleep(1)
+        processing_messages.discard(message.id)
 
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
-                "https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.1",
-                headers=headers,
-                json=payload
-            ) as resp:
-                if resp.status == 200:
-                    data = await resp.json()
-                    full = data[0].get("generated_text", "")
-                    reply = full.replace(prompt, "").strip() if full else "LachsGPT war sprachlos... 🐟"
-                    await message.channel.send(reply)
-                else:
-                    await message.channel.send(f"LachsGPT hat sich verschluckt... ({resp.status})")
-
-# 🧠 Hintergrund-Tasks starten
+# 🧠 Start Hintergrund-Tasks
 @client.event
 async def setup_hook():
     client.loop.create_task(check_stream())
 
-# 🚀 Let’s gooo
+# 🚀 Los geht’s
 keep_alive()
 client.run(TOKEN)
+
 
