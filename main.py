@@ -111,5 +111,8 @@ async def on_message(message):
 
 # 🚀 Start
 keep_alive()
-client.loop.create_task(check_stream())
+@client.event
+async def setup_hook():
+    client.loop.create_task(check_stream())
+
 client.run(TOKEN)
