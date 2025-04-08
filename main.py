@@ -2,15 +2,15 @@
 from dotenv import load_dotenv
 load_dotenv()
 import discord
-import openai
 import os
 import aiohttp
 import asyncio
+from openai import OpenAI
 from flask import Flask
 from threading import Thread
 
 # ⛓️ Keys und IDs aus .env
-openai.api_key = os.getenv("OPENAI_API_KEY")
+openai_client = OpenAI()
 TOKEN = os.getenv("DISCORD_BOT_TOKEN")
 TWITCH_CLIENT_ID = os.getenv("TWITCH_CLIENT_ID")
 TWITCH_CLIENT_SECRET = os.getenv("TWITCH_CLIENT_SECRET")
@@ -21,7 +21,7 @@ DISCORD_CHANNEL_ID = int(os.getenv("DISCORD_CHANNEL_ID"))
 intents = discord.Intents.all()
 client = discord.Client(intents=intents)
 
-# 🌐 Flask Webserver für Render (damit online bleibt)
+# 🌐 Flask Webserver für Render
 app = Flask('')
 
 @app.route('/')
@@ -43,7 +43,6 @@ async def check_stream():
     global is_live
 
     async with aiohttp.ClientSession() as session:
-        # Token holen
         auth_url = "https://id.twitch.tv/oauth2/token"
         auth_params = {
             "client_id": TWITCH_CLIENT_ID,
@@ -78,18 +77,16 @@ async def check_stream():
                 else:
                     is_live = False
 
-            await asyncio.sleep(60)  # jede Minute checken
+            await asyncio.sleep(60)
 
 # 🤖 Bot bereit
 @client.event
 async def on_ready():
     print(f"LachsGPT ist online! Eingeloggt als {client.user}")
 
-# 💬 Chatfunktion
+# 💬 Chatfunktion mit neuer OpenAI-Syntax
 @client.event
 async def on_message(message):
-    print(f"Nachricht erhalten: {message.content}")
-
     if message.author.bot:
         return
 
@@ -100,19 +97,20 @@ async def on_message(message):
             return
 
         try:
-            response = openai.ChatCompletion.create(
+            response = openai_client.chat.completions.create(
                 model="gpt-3.5-turbo",
                 messages=[{"role": "user", "content": prompt}]
             )
-            reply = response["choices"][0]["message"]["content"]
+            reply = response.choices[0].message.content
             await message.channel.send(reply)
         except Exception as e:
             await message.channel.send(f"Upsi, Lachs hatte ein Problem: {e}")
 
-# 🚀 Start
-keep_alive()
+# 🧠 setup_hook statt client.loop
 @client.event
 async def setup_hook():
     client.loop.create_task(check_stream())
 
+# 🧭 Abfahrt
+keep_alive()
 client.run(TOKEN)
