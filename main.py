@@ -19,7 +19,7 @@ openai.api_key = os.getenv("OPENAI_API_KEY")
 TOKEN = os.getenv("DISCORD_BOT_TOKEN")
 
 intents = discord.Intents.default()
-intents.messages = True
+intents = discord.Intents.all()
 client = discord.Client(intents=intents)
 
 app = Flask('')
