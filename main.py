@@ -78,33 +78,41 @@ async def check_stream():
 
             await asyncio.sleep(60)
 
-# 🤖 Bot bereit
+# 🤖 Bot ist bereit
 @client.event
 async def on_ready():
     print(f"LachsGPT ist online! Eingeloggt als {client.user}")
 
-# 💬 Hugging Face GPT-Funktion
+# 💬 GPT-Funktion über Hugging Face (spricht deine Sprache)
 @client.event
 async def on_message(message):
-    if message.author.bot:
+    if message.author == client.user or message.author.bot:
         return
 
     if message.content.startswith("!lachs"):
         prompt = message.content.replace("!lachs", "").strip()
+
         if not prompt:
             await message.channel.send("Gib mir was zum Brutzeln, Lachs!")
             return
 
         await message.channel.send("LachsGPT denkt nach... 🧠")
 
+        system_instruction = (
+            "Antworte immer in der Sprache, in der der Benutzer spricht. "
+            "Wenn die Frage auf Deutsch ist, antworte auf Deutsch. "
+            "Wenn sie auf Englisch ist, dann auf Englisch. "
+            "Verwende keine andere Sprache."
+        )
+
+        payload = {
+            "inputs": f"[INST] <<SYS>>\n{system_instruction}\n<</SYS>>\n{prompt} [/INST]",
+            "parameters": {"max_new_tokens": 200},
+        }
+
         headers = {
             "Authorization": f"Bearer {HF_TOKEN}",
             "Content-Type": "application/json"
-        }
-
-        payload = {
-            "inputs": prompt,
-            "parameters": {"max_new_tokens": 200},
         }
 
         async with aiohttp.ClientSession() as session:
@@ -123,11 +131,11 @@ async def on_message(message):
                 else:
                     await message.channel.send(f"LachsGPT hat sich verschluckt... ({resp.status})")
 
-# 🧠 Background Task Hook
+# 🧠 Hintergrundtask starten
 @client.event
 async def setup_hook():
     client.loop.create_task(check_stream())
 
-# 🧭 Start
+# 🚀 Start
 keep_alive()
 client.run(TOKEN)
