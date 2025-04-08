@@ -1,4 +1,13 @@
 from dotenv import load_dotenv
+@client.event
+async def on_message(message):
+    print(f"Nachricht erhalten: {message.content}")  # 👈 DAS ist die Debug-Zeile!
+
+    if message.author == client.user:
+        return
+
+    if message.content.startswith("!lachs"):
+        await message.channel.send("Ich bin ein lachsiger Lachs! 🐟")
 load_dotenv()
 import discord
 import openai
