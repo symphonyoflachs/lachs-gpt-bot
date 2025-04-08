@@ -83,16 +83,17 @@ async def check_stream():
 async def on_ready():
     print(f"LachsGPT ist online! Eingeloggt als {client.user}")
 
-# 💬 GPT-Funktion über Hugging Face (spricht deine Sprache)
+# 💬 GPT-Funktion über Hugging Face (mit Prompt-Fix + Sprachlogik)
 @client.event
 async def on_message(message):
     if message.author == client.user or message.author.bot:
         return
 
-    if message.content.startswith("!lachs"):
-        prompt = message.content.replace("!lachs", "").strip()
+    content = message.content.strip()
+    if content.lower().startswith("!lachs"):
+        prompt = content[6:].strip()
 
-        if not prompt:
+        if len(prompt) < 3:
             await message.channel.send("Gib mir was zum Brutzeln, Lachs!")
             return
 
@@ -123,11 +124,9 @@ async def on_message(message):
             ) as resp:
                 if resp.status == 200:
                     data = await resp.json()
-                    if isinstance(data, list) and "generated_text" in data[0]:
-                        reply = data[0]["generated_text"].replace(prompt, "").strip()
-                        await message.channel.send(reply)
-                    else:
-                        await message.channel.send("LachsGPT war sprachlos... 🐟")
+                    full = data[0].get("generated_text", "")
+                    reply = full.replace(prompt, "").strip() if full else "LachsGPT war sprachlos... 🐟"
+                    await message.channel.send(reply)
                 else:
                     await message.channel.send(f"LachsGPT hat sich verschluckt... ({resp.status})")
 
@@ -136,6 +135,6 @@ async def on_message(message):
 async def setup_hook():
     client.loop.create_task(check_stream())
 
-# 🚀 Start
+# 🚀 Los geht’s
 keep_alive()
 client.run(TOKEN)
