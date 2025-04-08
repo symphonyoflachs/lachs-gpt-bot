@@ -8,7 +8,7 @@ import asyncio
 from flask import Flask
 from threading import Thread
 
-# ⛓️ Keys und IDs aus .env
+# ⛓️ .env Variablen
 TOKEN = os.getenv("DISCORD_BOT_TOKEN")
 HF_TOKEN = os.getenv("HF_TOKEN")
 TWITCH_CLIENT_ID = os.getenv("TWITCH_CLIENT_ID")
@@ -16,11 +16,14 @@ TWITCH_CLIENT_SECRET = os.getenv("TWITCH_CLIENT_SECRET")
 TWITCH_USERNAME = os.getenv("TWITCH_USERNAME")
 DISCORD_CHANNEL_ID = int(os.getenv("DISCORD_CHANNEL_ID"))
 
-# 🌊 Intents & Client
+# 🌊 Discord Bot & Intents
 intents = discord.Intents.all()
 client = discord.Client(intents=intents)
 
-# 🌐 Flask Webserver für Render
+# 🧠 Merkt sich verarbeitete Nachrichten (Anti-Doppel)
+recent_messages = set()
+
+# 🌐 Flask Webserver für Render „Keep Alive“
 app = Flask('')
 
 @app.route('/')
@@ -34,7 +37,7 @@ def keep_alive():
     t = Thread(target=run)
     t.start()
 
-# 🎮 Twitch-Live-Check
+# 🎮 Twitch-Live-Checker
 is_live = False
 
 async def check_stream():
@@ -78,17 +81,30 @@ async def check_stream():
 
             await asyncio.sleep(60)
 
-# 🤖 Bot ist bereit
+# ✅ Bot ist bereit
 @client.event
 async def on_ready():
     print(f"LachsGPT ist online! Eingeloggt als {client.user}")
 
-# 💬 GPT-Funktion über Hugging Face (mit Prompt-Fix + Sprachlogik)
+# 💬 GPT via Hugging Face mit Sprachlogik + Anti-Doppel
 @client.event
 async def on_message(message):
     if message.author == client.user or message.author.bot:
         return
 
+    # 🛡️ Doppelcheck
+    if message.id in recent_messages:
+        return
+    recent_messages.add(message.id)
+
+    # Nach 60 Sek. vergessen
+    async def forget_message(mid):
+        await asyncio.sleep(60)
+        recent_messages.discard(mid)
+
+    client.loop.create_task(forget_message(message.id))
+
+    # Lachs-Prompt checken
     content = message.content.strip()
     if content.lower().startswith("!lachs"):
         prompt = content[6:].strip()
@@ -130,11 +146,12 @@ async def on_message(message):
                 else:
                     await message.channel.send(f"LachsGPT hat sich verschluckt... ({resp.status})")
 
-# 🧠 Hintergrundtask starten
+# 🧠 Hintergrund-Tasks starten
 @client.event
 async def setup_hook():
     client.loop.create_task(check_stream())
 
-# 🚀 Los geht’s
+# 🚀 Let’s gooo
 keep_alive()
 client.run(TOKEN)
+
