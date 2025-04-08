@@ -5,13 +5,12 @@ import discord
 import os
 import aiohttp
 import asyncio
-from openai import OpenAI
 from flask import Flask
 from threading import Thread
 
 # ⛓️ Keys und IDs aus .env
-openai_client = OpenAI()
 TOKEN = os.getenv("DISCORD_BOT_TOKEN")
+HF_TOKEN = os.getenv("HF_TOKEN")
 TWITCH_CLIENT_ID = os.getenv("TWITCH_CLIENT_ID")
 TWITCH_CLIENT_SECRET = os.getenv("TWITCH_CLIENT_SECRET")
 TWITCH_USERNAME = os.getenv("TWITCH_USERNAME")
@@ -84,7 +83,7 @@ async def check_stream():
 async def on_ready():
     print(f"LachsGPT ist online! Eingeloggt als {client.user}")
 
-# 💬 Chatfunktion mit neuer OpenAI-Syntax
+# 💬 Hugging Face GPT-Funktion
 @client.event
 async def on_message(message):
     if message.author.bot:
@@ -96,21 +95,39 @@ async def on_message(message):
             await message.channel.send("Gib mir was zum Brutzeln, Lachs!")
             return
 
-        try:
-            response = openai_client.chat.completions.create(
-                model="gpt-3.5-turbo",
-                messages=[{"role": "user", "content": prompt}]
-            )
-            reply = response.choices[0].message.content
-            await message.channel.send(reply)
-        except Exception as e:
-            await message.channel.send(f"Upsi, Lachs hatte ein Problem: {e}")
+        await message.channel.send("LachsGPT denkt nach... 🧠")
 
-# 🧠 setup_hook statt client.loop
+        headers = {
+            "Authorization": f"Bearer {HF_TOKEN}",
+            "Content-Type": "application/json"
+        }
+
+        payload = {
+            "inputs": prompt,
+            "parameters": {"max_new_tokens": 200},
+        }
+
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                "https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.1",
+                headers=headers,
+                json=payload
+            ) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    if isinstance(data, list) and "generated_text" in data[0]:
+                        reply = data[0]["generated_text"].replace(prompt, "").strip()
+                        await message.channel.send(reply)
+                    else:
+                        await message.channel.send("LachsGPT war sprachlos... 🐟")
+                else:
+                    await message.channel.send(f"LachsGPT hat sich verschluckt... ({resp.status})")
+
+# 🧠 Background Task Hook
 @client.event
 async def setup_hook():
     client.loop.create_task(check_stream())
 
-# 🧭 Abfahrt
+# 🧭 Start
 keep_alive()
 client.run(TOKEN)
