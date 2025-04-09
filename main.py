@@ -5,6 +5,7 @@ import discord
 import os
 import aiohttp
 import asyncio
+import requests
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
 from flask import Flask
 from threading import Thread
@@ -34,6 +35,7 @@ TWITCH_CLIENT_ID = os.getenv("TWITCH_CLIENT_ID")
 TWITCH_CLIENT_SECRET = os.getenv("TWITCH_CLIENT_SECRET")
 TWITCH_USERNAME = os.getenv("TWITCH_USERNAME")
 DISCORD_CHANNEL_ID = int(os.getenv("DISCORD_CHANNEL_ID"))
+DEEPAI_API_KEY = os.getenv("DEEPAI_API_KEY")
 
 # 🌊 Discord Bot
 intents = discord.Intents.all()
@@ -66,7 +68,23 @@ model = AutoModelForSequenceClassification.from_pretrained(model_name)
 async def on_ready():
     print(f"LachsGPT ist online! Eingeloggt als {client.user}")
 
-# 💬 HuggingFace Antwort mit XLM-Roberta
+# 💬 Bild generieren mit DeepAI
+def generate_image(prompt):
+    url = "https://api.deepai.org/api/text2img"
+    headers = {"api-key": DEEPAI_API_KEY}
+    data = {"text": prompt}
+    response = requests.post(url, headers=headers, data=data)
+    result = response.json()
+    image_url = result.get("output_url")
+
+    if image_url:
+        # Lade das Bild herunter
+        image_data = requests.get(image_url).content
+        return image_data
+    else:
+        return None
+
+# 💬 HuggingFace und Bildgenerierung
 @client.event
 async def on_message(message):
     if message.author == client.user or message.author.bot:
@@ -81,20 +99,23 @@ async def on_message(message):
         if content.lower().startswith("!lachs"):
             prompt = content[6:].strip()
 
-            if len(prompt) < 3:
+            if prompt.startswith("bild"):
+                image_prompt = prompt[4:].strip()
+                image_data = generate_image(image_prompt)
+
+                if image_data:
+                    # Speichere das Bild temporär, um es hochzuladen
+                    temp_filename = "temp_image.png"
+                    with open(temp_filename, "wb") as temp_file:
+                        temp_file.write(image_data)
+
+                    # Lade die Datei hoch
+                    await message.channel.send(file=discord.File(temp_filename))
+                else:
+                    await message.channel.send("Ups, konnte kein Bild erstellen!")
+            else:
+                # Fallback für andere Eingaben
                 await message.channel.send("Gib mir was zum Brutzeln, Lachs!")
-                return
-
-            await message.channel.send("LachsGPT denkt nach... 🧠")
-
-            # Verwenden von XLM-Roberta zur Verarbeitung
-            inputs = tokenizer(prompt, return_tensors="pt")
-            outputs = model(**inputs)
-
-            # Hier könntest du die logits auswerten und entsprechend antworten
-            reply = "Ich bin mir noch nicht sicher, was ich dazu sagen soll..."  # Hier kannst du basierend auf der Modellantwort anpassen
-            await message.channel.send(reply)
-
     finally:
         await asyncio.sleep(1)
         processing_messages.discard(message.id)
