@@ -5,7 +5,7 @@ import discord
 import os
 import aiohttp
 import asyncio
-import sys
+from transformers import AutoTokenizer, AutoModelForSequenceClassification
 from flask import Flask
 from threading import Thread
 
@@ -56,56 +56,17 @@ def keep_alive():
     t = Thread(target=run)
     t.start()
 
-# 🎮 Twitch-Live-Checker
-is_live = False
-
-async def check_stream():
-    await client.wait_until_ready()
-    global is_live
-
-    async with aiohttp.ClientSession() as session:
-        auth_url = "https://id.twitch.tv/oauth2/token"
-        auth_params = {
-            "client_id": TWITCH_CLIENT_ID,
-            "client_secret": TWITCH_CLIENT_SECRET,
-            "grant_type": "client_credentials"
-        }
-
-        async with session.post(auth_url, params=auth_params) as auth_resp:
-            auth_data = await auth_resp.json()
-            access_token = auth_data["access_token"]
-
-        headers = {
-            "Client-ID": TWITCH_CLIENT_ID,
-            "Authorization": f"Bearer {access_token}"
-        }
-
-        while not client.is_closed():
-            url = f"https://api.twitch.tv/helix/streams?user_login={TWITCH_USERNAME}"
-            async with session.get(url, headers=headers) as resp:
-                data = await resp.json()
-                streams = data.get("data", [])
-
-                if streams:
-                    stream = streams[0]
-                    title = stream["title"]
-                    if not is_live:
-                        is_live = True
-                        msg = f"🎥 **{TWITCH_USERNAME} ist jetzt live!**\n**{title}**\n👉 https://twitch.tv/{TWITCH_USERNAME}"
-                        channel = client.get_channel(DISCORD_CHANNEL_ID)
-                        if channel:
-                            await channel.send(msg)
-                else:
-                    is_live = False
-
-            await asyncio.sleep(60)
+# 🔍 Integration von XLM-Roberta
+model_name = "xlm-roberta-large"
+tokenizer = AutoTokenizer.from_pretrained(model_name)
+model = AutoModelForSequenceClassification.from_pretrained(model_name)
 
 # ✅ Bot bereit
 @client.event
 async def on_ready():
     print(f"LachsGPT ist online! Eingeloggt als {client.user}")
 
-# 💬 HuggingFace Antwort
+# 💬 HuggingFace Antwort mit XLM-Roberta
 @client.event
 async def on_message(message):
     if message.author == client.user or message.author.bot:
@@ -126,31 +87,13 @@ async def on_message(message):
 
             await message.channel.send("LachsGPT denkt nach... 🧠")
 
-            full_prompt = prompt  # Keine Sprachlogik drumherum
+            # Verwenden von XLM-Roberta zur Verarbeitung
+            inputs = tokenizer(prompt, return_tensors="pt")
+            outputs = model(**inputs)
 
-            payload = {
-                "inputs": full_prompt,
-                "parameters": {"max_new_tokens": 200},
-            }
-
-            headers = {
-                "Authorization": f"Bearer {HF_TOKEN}",
-                "Content-Type": "application/json"
-            }
-
-            async with aiohttp.ClientSession() as session:
-                async with session.post(
-                    "https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.1",
-                    headers=headers,
-                    json=payload
-                ) as resp:
-                    if resp.status == 200:
-                        data = await resp.json()
-                        full = data[0].get("generated_text", "")
-                        reply = full.strip() if full else "LachsGPT war sprachlos... 🐟"
-                        await message.channel.send(reply)
-                    else:
-                        await message.channel.send(f"LachsGPT hat sich verschluckt... ({resp.status})")
+            # Hier könntest du die logits auswerten und entsprechend antworten
+            reply = "Ich bin mir noch nicht sicher, was ich dazu sagen soll..."  # Hier kannst du basierend auf der Modellantwort anpassen
+            await message.channel.send(reply)
 
     finally:
         await asyncio.sleep(1)
