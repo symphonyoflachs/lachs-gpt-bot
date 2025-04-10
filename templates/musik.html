@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <title>Musiksteuerung | LachsGPT</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <div class="container musik-panel">
+    <h2>Musiksteuerung</h2>
+
+    <div id="track-info" class="track-info">
+      <img id="track-cover" src="https://via.placeholder.com/300x300.png?text=Kein+Cover" alt="Cover" class="track-cover">
+      <div class="track-text">
+        <h3 id="track-title">Lädt...</h3>
+        <p id="track-artist">–</p>
+      </div>
+    </div>
+
+    <div class="controls">
+      <button onclick="sendAction('prev')">⏮</button>
+      <button onclick="sendAction('pause')">⏯</button>
+      <button onclick="sendAction('skip')">⏭</button>
+      <button onclick="sendAction('stop')">⏹</button>
+    </div>
+
+    <a href="/">Zurück</a>
+  </div>
+
+  <script>
+    async function updateNowPlaying() {
+      const res = await fetch('/api/nowplaying');
+      const data = await res.json();
+      if (data.title) {
+        document.getElementById('track-title').textContent = data.title;
+        document.getElementById('track-artist').textContent = data.artist;
+        document.getElementById('track-cover').src = data.cover;
+      }
+    }
+
+    async function sendAction(action) {
+      await fetch('/music_control', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ action })
+      });
+    }
+
+    setInterval(updateNowPlaying, 5000);
+    updateNowPlaying();
+  </script>
+</body>
+</html>
