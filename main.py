@@ -1,6 +1,8 @@
 import discord
 from discord.ext import commands, tasks
+from discord.ui import View, Button
 import wavelink
+from wavelink import Playable
 import os
 import aiohttp
 import requests
@@ -8,7 +10,6 @@ import asyncio
 from dotenv import load_dotenv
 from flask import Flask, request, jsonify
 from threading import Thread
-from discord.ui import View, Button  # Für Spielrollen
 
 load_dotenv()
 
@@ -62,16 +63,17 @@ async def on_ready():
         password=LAVALINK_PASSWORD,
         spotify_client_id=SPOTIFY_CLIENT_ID,
         spotify_client_secret=SPOTIFY_CLIENT_SECRET,
+        identifier="MAIN",
         region="eu"
     )
     check_stream.start()
-    await setup_game_roles()  # 🆕 Spielrollen initialisieren
+    await setup_game_roles()
 
 @bot.event
-async def on_wavelink_track_start(player: wavelink.Player, track: wavelink.Track):
+async def on_wavelink_track_start(player: wavelink.Player, track: Playable):
     now_playing["title"] = track.title
-    now_playing["artist"] = track.author
-    now_playing["cover"] = track.thumb or now_playing["cover"]
+    now_playing["artist"] = track.author or "Unbekannt"
+    now_playing["cover"] = getattr(track.info, "artworkUrl", now_playing["cover"])
 
 @tasks.loop(minutes=1)
 async def check_stream():
@@ -103,9 +105,19 @@ async def lachs(ctx, *, frage: str = None):
     if frage is None:
         await ctx.respond("Gib mir was zum Brutzeln, Lachs!")
         return
+
     await ctx.respond("LachsGPT denkt nach... 🧠")
+
     prompt = f"[INST] <<SYS>>\nAntworte immer in der Sprache, in der der Benutzer spricht. Verwende keine andere Sprache.\n<</SYS>>\n{frage}[/INST]"
-    await ctx.send(f"Frage: {frage}\n\nAntwort: LachsGPT antwortet bald...")
+
+    async with aiohttp.ClientSession() as session:
+        async with session.post("https://api-inference.huggingface.co/models/mistralai/Mixtral-8x7B-Instruct-v0.1",
+                                headers={"Authorization": f"Bearer {os.getenv('HF_API_KEY')}"},
+                                json={"inputs": prompt}) as resp:
+            data = await resp.json()
+            output = data[0]["generated_text"] if isinstance(data, list) else "Fehler bei der Antwort."
+    
+    await ctx.send(f"Frage: {frage}\n\nAntwort: {output}")
 
 @bot.slash_command(name="bild", description="Erzeuge ein KI-Bild mit DeepAI")
 async def bild(ctx, *, prompt: str):
@@ -132,16 +144,14 @@ async def watch(ctx):
         await ctx.respond("Konnte keinen Raum erstellen.")
 
 # === Spielrollen-System ===
-GAMEROLE_CHANNEL_ID = 123456789012345678  # ⬅️ DEINE Channel-ID HIER einfügen
+
+GAMEROLE_CHANNEL_ID = 123456789012345678  # ⬅️ Ersetze durch DEINE Channel-ID
 
 GAMEROLES = {
-    "League of Legends": "League of Legends",
-    "Naraka": "Naraka",
-    "Elden Ring": "Elden Ring",
-    "Valorant": "Valorant",
-    "Marvel Rivals": "Marvel Rivals",
-    "R.E.P.O.": "R.E.P.O.",
-    "Schedule I": "Schedule I"
+    "🎮 League of Legends": "League of Legends",
+    "💣 Valorant": "Valorant",
+    "🐍 Apex Legends": "Apex Legends",
+    "🎤 Fortnite": "Fortnite"
 }
 
 class RoleView(View):
@@ -176,5 +186,7 @@ async def setup_game_roles():
         if not any("🎮 **Wähle deine Spiele-Rollen:**" in m.content for m in messages):
             await channel.send("🎮 **Wähle deine Spiele-Rollen:**", view=RoleView())
 
+# === Webserver starten ===
 Thread(target=start_web).start()
+
 bot.run(TOKEN)
