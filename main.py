@@ -135,10 +135,13 @@ async def watch(ctx):
 GAMEROLE_CHANNEL_ID = 123456789012345678  # ⬅️ DEINE Channel-ID HIER einfügen
 
 GAMEROLES = {
-    "🎮 League of Legends": "League of Legends",
-    "💣 Valorant": "Valorant",
-    "🐍 Apex Legends": "Apex Legends",
-    "🎤 Fortnite": "Fortnite"
+    "League of Legends": "League of Legends",
+    "Naraka": "Naraka",
+    "Elden Ring": "Elden Ring",
+    "Valorant": "Valorant",
+    "Marvel Rivals": "Marvel Rivals",
+    "R.E.P.O.": "R.E.P.O.",
+    "Schedule I": "Schedule I"
 }
 
 class RoleView(View):
