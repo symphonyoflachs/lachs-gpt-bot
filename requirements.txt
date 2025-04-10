@@ -4,5 +4,5 @@ flask
 aiohttp
 transformers
 torch
-wavelink
+wavelink==2.4.2
 requests
