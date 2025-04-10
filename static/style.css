@@ -1,0 +1,72 @@
+body {
+  font-family: 'Segoe UI', sans-serif;
+  background: #121212;
+  color: white;
+  margin: 0;
+  padding: 0;
+}
+
+.container {
+  max-width: 800px;
+  margin: auto;
+  padding: 40px;
+}
+
+h1, h2 {
+  color: #ff7e5f;
+}
+
+.track-info {
+  display: flex;
+  gap: 20px;
+  align-items: center;
+  margin-bottom: 30px;
+}
+
+.track-cover {
+  width: 120px;
+  height: 120px;
+  border-radius: 10px;
+  object-fit: cover;
+  background: #333;
+}
+
+.track-text h3 {
+  margin: 0;
+  font-size: 22px;
+}
+
+.controls button {
+  margin: 5px;
+  padding: 10px 20px;
+  background: #ff7e5f;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 16px;
+}
+
+.controls button:hover {
+  background: #eb5e3c;
+}
+
+input[type="text"], button {
+  padding: 10px;
+  border-radius: 6px;
+  border: none;
+  margin: 10px 0;
+  width: 100%;
+  font-size: 16px;
+}
+
+a {
+  display: inline-block;
+  margin-top: 20px;
+  color: #ff7e5f;
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
