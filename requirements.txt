@@ -4,3 +4,5 @@ flask
 aiohttp
 transformers
 torch
+wavelink
+requests
