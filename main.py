@@ -1,130 +1,177 @@
-# -*- coding: utf-8 -*-
-from dotenv import load_dotenv
-load_dotenv()
 import discord
+from discord.ext import commands, tasks
+import wavelink
 import os
 import aiohttp
-import asyncio
 import requests
-from transformers import AutoTokenizer, AutoModelForSequenceClassification
-from flask import Flask
+import asyncio
+from dotenv import load_dotenv
+from flask import Flask, request, jsonify
 from threading import Thread
+from discord.ui import View, Button  # Für Spielrollen
 
-# 🔐 Instanz-Checker
-LOCKFILE = ".lachslock"
+load_dotenv()
 
-if os.path.exists(LOCKFILE):
-    print("❌ LachsGPT ist bereits aktiv – Beende mich!")
-    sys.exit(0)
-else:
-    with open(LOCKFILE, "w") as f:
-        f.write("running")
-
-import atexit
-
-def remove_lock():
-    if os.path.exists(LOCKFILE):
-        os.remove(LOCKFILE)
-
-atexit.register(remove_lock)
-
-# ⛓️ .env Variablen
 TOKEN = os.getenv("DISCORD_BOT_TOKEN")
-HF_TOKEN = os.getenv("HF_TOKEN")
+OWNER_ID = int(os.getenv("OWNER_ID"))
+TWITCH_USERNAME = os.getenv("TWITCH_USERNAME")
 TWITCH_CLIENT_ID = os.getenv("TWITCH_CLIENT_ID")
 TWITCH_CLIENT_SECRET = os.getenv("TWITCH_CLIENT_SECRET")
-TWITCH_USERNAME = os.getenv("TWITCH_USERNAME")
-DISCORD_CHANNEL_ID = int(os.getenv("DISCORD_CHANNEL_ID"))
 DEEPAI_API_KEY = os.getenv("DEEPAI_API_KEY")
+LAVALINK_HOST = os.getenv("LAVALINK_HOST")
+LAVALINK_PORT = int(os.getenv("LAVALINK_PORT"))
+LAVALINK_PASSWORD = os.getenv("LAVALINK_PASSWORD")
+SPOTIFY_CLIENT_ID = os.getenv("SPOTIFY_CLIENT_ID")
+SPOTIFY_CLIENT_SECRET = os.getenv("SPOTIFY_CLIENT_SECRET")
 
-# 🌊 Discord Bot
 intents = discord.Intents.all()
-client = discord.Client(intents=intents)
+bot = commands.Bot(command_prefix="!", intents=intents)
 
-# 🧠 Anti-Doppel-Schutz
-processing_messages = set()
+now_playing = {
+    "title": "Kein Song aktiv",
+    "artist": "–",
+    "cover": "https://via.placeholder.com/300x300.png?text=Kein+Cover"
+}
 
-# 🌐 Flask für Render
-app = Flask('')
+web = Flask(__name__)
 
-@app.route('/')
+@web.route("/")
 def home():
-    return "LachsGPT is swimming 🐟"
+    return "LachsGPT läuft."
 
-def run():
-    app.run(host='0.0.0.0', port=3000)
+@web.route("/api/nowplaying")
+def api_nowplaying():
+    return jsonify(now_playing)
 
-def keep_alive():
-    t = Thread(target=run)
-    t.start()
+@web.route("/music_control", methods=["POST"])
+def api_music_control():
+    action = request.json.get("action")
+    print(f"Musiksteuerung: {action}")
+    return jsonify({"status": "ok"})
 
-# 🔍 Integration von XLM-Roberta
-model_name = "xlm-roberta-large"
-tokenizer = AutoTokenizer.from_pretrained(model_name)
-model = AutoModelForSequenceClassification.from_pretrained(model_name)
+def start_web():
+    web.run(host="0.0.0.0", port=3000)
 
-# ✅ Bot bereit
-@client.event
+@bot.event
 async def on_ready():
-    print(f"LachsGPT ist online! Eingeloggt als {client.user}")
+    print(f"LachsGPT ist online als {bot.user}")
+    await wavelink.NodePool.create_node(
+        bot=bot,
+        host=LAVALINK_HOST,
+        port=LAVALINK_PORT,
+        password=LAVALINK_PASSWORD,
+        spotify_client_id=SPOTIFY_CLIENT_ID,
+        spotify_client_secret=SPOTIFY_CLIENT_SECRET,
+        region="eu"
+    )
+    check_stream.start()
+    await setup_game_roles()  # 🆕 Spielrollen initialisieren
 
-# 💬 Bild generieren mit DeepAI
-def generate_image(prompt):
-    url = "https://api.deepai.org/api/text2img"
-    headers = {"api-key": DEEPAI_API_KEY}
-    data = {"text": prompt}
-    response = requests.post(url, headers=headers, data=data)
-    result = response.json()
-    image_url = result.get("output_url")
+@bot.event
+async def on_wavelink_track_start(player: wavelink.Player, track: wavelink.Track):
+    now_playing["title"] = track.title
+    now_playing["artist"] = track.author
+    now_playing["cover"] = track.thumb or now_playing["cover"]
 
-    if image_url:
-        # Lade das Bild herunter
-        image_data = requests.get(image_url).content
-        return image_data
-    else:
-        return None
-
-# 💬 HuggingFace und Bildgenerierung
-@client.event
-async def on_message(message):
-    if message.author == client.user or message.author.bot:
-        return
-
-    if message.id in processing_messages:
-        return
-    processing_messages.add(message.id)
-
+@tasks.loop(minutes=1)
+async def check_stream():
     try:
-        content = message.content.strip()
-        if content.lower().startswith("!lachs"):
-            prompt = content[6:].strip()
+        token = await get_twitch_token()
+        headers = {
+            "Client-ID": TWITCH_CLIENT_ID,
+            "Authorization": f"Bearer {token}"
+        }
+        async with aiohttp.ClientSession() as session:
+            async with session.get(f"https://api.twitch.tv/helix/streams?user_login={TWITCH_USERNAME}", headers=headers) as resp:
+                data = await resp.json()
+                if data.get("data"):
+                    print("Stream ist LIVE:", data["data"][0]["title"])
+    except Exception as e:
+        print("Twitch Fehler:", e)
 
-            if prompt.startswith("bild"):
-                image_prompt = prompt[4:].strip()
-                image_data = generate_image(image_prompt)
+async def get_twitch_token():
+    async with aiohttp.ClientSession() as session:
+        async with session.post("https://id.twitch.tv/oauth2/token", params={
+            "client_id": TWITCH_CLIENT_ID,
+            "client_secret": TWITCH_CLIENT_SECRET,
+            "grant_type": "client_credentials"
+        }) as resp:
+            return (await resp.json()).get("access_token")
 
-                if image_data:
-                    # Speichere das Bild temporär, um es hochzuladen
-                    temp_filename = "temp_image.png"
-                    with open(temp_filename, "wb") as temp_file:
-                        temp_file.write(image_data)
+@bot.slash_command(name="lachs", description="Frag den LachsGPT etwas")
+async def lachs(ctx, *, frage: str = None):
+    if frage is None:
+        await ctx.respond("Gib mir was zum Brutzeln, Lachs!")
+        return
+    await ctx.respond("LachsGPT denkt nach... 🧠")
+    prompt = f"[INST] <<SYS>>\nAntworte immer in der Sprache, in der der Benutzer spricht. Verwende keine andere Sprache.\n<</SYS>>\n{frage}[/INST]"
+    await ctx.send(f"Frage: {frage}\n\nAntwort: LachsGPT antwortet bald...")
 
-                    # Lade die Datei hoch
-                    await message.channel.send(file=discord.File(temp_filename))
-                else:
-                    await message.channel.send("Ups, konnte kein Bild erstellen!")
-            else:
-                # Fallback für andere Eingaben
-                await message.channel.send("Gib mir was zum Brutzeln, Lachs!")
-    finally:
-        await asyncio.sleep(1)
-        processing_messages.discard(message.id)
+@bot.slash_command(name="bild", description="Erzeuge ein KI-Bild mit DeepAI")
+async def bild(ctx, *, prompt: str):
+    await ctx.respond("Ich male für dich...")
+    async with aiohttp.ClientSession() as session:
+        async with session.post("https://api.deepai.org/api/text2img",
+            headers={"api-key": DEEPAI_API_KEY},
+            data={"text": prompt}) as response:
+            data = await response.json()
+    await ctx.send(data.get("output_url", "Kein Bild erzeugt."))
 
-# 🧠 Hintergrund-Tasks starten
-@client.event
-async def setup_hook():
-    client.loop.create_task(check_stream())
+@bot.slash_command(name="watch", description="Erstelle einen Watch2Gether-Raum")
+async def watch(ctx):
+    async with aiohttp.ClientSession() as session:
+        async with session.post("https://w2g.tv/rooms/create.json", json={
+            "w2g_api_key": "default",
+            "share": "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+        }) as resp:
+            data = await resp.json()
+    if "streamkey" in data:
+        link = f"https://w2g.tv/rooms/{data['streamkey']}"
+        await ctx.respond(f"Hier ist dein Watch2Gether Raum, Lachs:\n{link}")
+    else:
+        await ctx.respond("Konnte keinen Raum erstellen.")
 
-# 🚀 Start
-keep_alive()
-client.run(TOKEN)
+# === Spielrollen-System ===
+GAMEROLE_CHANNEL_ID = 123456789012345678  # ⬅️ DEINE Channel-ID HIER einfügen
+
+GAMEROLES = {
+    "🎮 League of Legends": "League of Legends",
+    "💣 Valorant": "Valorant",
+    "🐍 Apex Legends": "Apex Legends",
+    "🎤 Fortnite": "Fortnite"
+}
+
+class RoleView(View):
+    def __init__(self):
+        super().__init__(timeout=None)
+        for emoji_label, role_name in GAMEROLES.items():
+            self.add_item(RoleButton(emoji_label, role_name))
+
+class RoleButton(Button):
+    def __init__(self, label, role_name):
+        super().__init__(label=label, style=discord.ButtonStyle.primary)
+        self.role_name = role_name
+
+    async def callback(self, interaction: discord.Interaction):
+        role = discord.utils.get(interaction.guild.roles, name=self.role_name)
+        if not role:
+            await interaction.response.send_message("Rolle nicht gefunden.", ephemeral=True)
+            return
+
+        if role in interaction.user.roles:
+            await interaction.user.remove_roles(role)
+            await interaction.response.send_message(f"Rolle **{role.name}** entfernt 🧼", ephemeral=True)
+        else:
+            await interaction.user.add_roles(role)
+            await interaction.response.send_message(f"Rolle **{role.name}** zugewiesen 🧂", ephemeral=True)
+
+async def setup_game_roles():
+    await bot.wait_until_ready()
+    channel = bot.get_channel(GAMEROLE_CHANNEL_ID)
+    if channel:
+        messages = [m async for m in channel.history(limit=10) if m.author == bot.user]
+        if not any("🎮 **Wähle deine Spiele-Rollen:**" in m.content for m in messages):
+            await channel.send("🎮 **Wähle deine Spiele-Rollen:**", view=RoleView())
+
+Thread(target=start_web).start()
+bot.run(TOKEN)
