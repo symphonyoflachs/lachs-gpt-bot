@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Watch2Gether Raum | LachsGPT</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <div class="container">
+    <h2>Watch2Gether Raum</h2>
+    {% if watch_url %}
+      <p>Hier ist dein Raum:</p>
+      <a href="{{ watch_url }}" target="_blank">{{ watch_url }}</a>
+    {% elif error %}
+      <p style="color:red;">{{ error }}</p>
+    {% endif %}
+    <a href="/">Zurück</a>
+  </div>
+</body>
+</html>
